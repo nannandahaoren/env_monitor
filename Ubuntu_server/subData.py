@@ -30,12 +30,10 @@ def on_message(client, userdata, msg):
     float_number = struct.unpack("f", msg.payload)[0]
     print(msg.topic + " " + str(float_number))
     # 以追加的形式打开csv文件
-    with open(csv_file, "a", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow([float_number])
+    
 
 
-def opDatabase():
+def insertData():
     # 创建Connection连接
     #
     conn = connect(
@@ -70,9 +68,6 @@ def opDatabase():
     # 关闭Connection对象
     conn.close()
 
-
-if __name__ == "__main__":
-    main()
 
 
 client = mqtt.Client(client_id)
