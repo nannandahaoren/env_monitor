@@ -2,7 +2,6 @@ import paho.mqtt.client as mqtt
 import random
 import time
 import struct
-import pandas as pd
 import csv
 from pymysql import *
 
@@ -69,7 +68,9 @@ if __name__ == "__main__":
 
     client = mqtt.Client(client_id)
     client.on_connect = on_connect
-    client.on_message = on_message
+    client.on_message = lambda client, userdata, msg: on_message(
+        client, userdata, msg, Cursor=Cursor, conn=conn
+    )
     client.username_pw_set(username, password)  # 设置用户名和密码
     client.connect(broker, port, 60)
     client.subscribe(topic="temperature")
