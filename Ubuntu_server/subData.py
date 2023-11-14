@@ -29,7 +29,7 @@ def on_connect(client, userdata, flags, rc):
 # subscribe 订阅到相应的主题后，打印该主题和对应的消息，消息是字节的形式，需要转化为字符串或者数字型
 def on_message(client, userdata, msg, Cursor, conn):
     global derta, start_time, end_time
-    float_number = struct.unpack("12s", msg.payload)[0]
+    float_number = struct.unpack("24s", msg.payload)[0]
     msg = float_number.decode("utf-8")
     print(msg)
 
