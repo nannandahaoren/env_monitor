@@ -1,4 +1,4 @@
-import time
+import utime
 import network
 import ujson
 from simple import MQTTClient  # 上面的步骤就是在下载umqtt.simple到ESP32设备
@@ -8,29 +8,61 @@ from umqtt import sub_cb, on_connect, on_message
 import array as arr
 from kalman_average import Average, Kalmanfilter
 import struct
-from machine import Pin, SoftI2C
+from machine import Pin, SoftI2C, I2C
 from BME280 import BME280
 
-MQTT_CLIENT = None
-LED = None
-
-# 发布订阅模式需要确定订阅什么主题
-pub_topic = "temperature"
-sub_topic = "sensor"
-# 下面根据实际情况进行修改
+import sh1106
 
 
-# ESP32 - Pin assignment
-i2c = SoftI2C(scl=Pin(22), sda=Pin(21), freq=10000)
+def show_time_msg(display, month, day, hour, minute, second, temp=0, humi=0, pres=0):
+    display.sleep(False)
+    display.fill(0)
 
-# 存放临时数组的平均值
-T = 0
-averageNum = 8  # averageNum是平均几个数求平均值，此处设为8
+    x1 = 0  # 水平线的起始 x 坐标
+    y1 = 0  # 水平线的起始 y 坐标
+    w = display.width  # 水平线的宽度为显示设备的宽度
+    h = display.height
+    x2 = 127
+    y2 = 63
+    color = 1  # 水平线的颜色
+    display.hline(x1, y1, w, color)
+    display.vline(x1, y1, h, color)
+    display.hline(x1, y2, w, color)
+    display.vline(x2, y1, h, color)
+    display.text("TIME", 46, 5, 1)
+    display.text(
+        f"{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}", 9, 16, 1
+    )
+
+    display.text("Temp: ", 15, 27, 1)
+    display.text(str(temp), 60, 27, 1)
+    display.text("Humi: ", 15, 38, 1)
+    display.text(str(humi), 60, 38, 1)
+    display.text("Pres: ", 15, 50, 1)
+    display.text(str(pres), 60, 50, 1)
+    display.show()
+
+
+def pop_element(aList):
+    if len(aList) == 0:
+        return 0
+    else:
+        return aList[-1]
 
 
 def main():
-    global MQTT_CLIENT, LED, i2c, averageNum
-    global pub_topic, sub_topic
+    oled_i2c = I2C(scl=Pin(5), sda=Pin(4), freq=400000)
+    display = sh1106.SH1106_I2C(128, 64, oled_i2c, Pin(16), 0x3C)
+
+    averageNum = 8  # averageNum是平均几个数求平均值，此处设为8
+
+    # 发布订阅模式需要确定订阅什么主题
+    pub_topic = "temperature"
+    sub_topic = "sensor"
+    # 下面根据实际情况进行修改
+
+    # ESP32 - Pin assignment
+    i2c = SoftI2C(scl=Pin(22), sda=Pin(21), freq=10000)
 
     # 1.链接WiFi
     do_connect()
@@ -51,8 +83,6 @@ def main():
     MQTT_CLIENT.connect()  # 建立连接
     MQTT_CLIENT.subscribe(sub_topic)
 
-    time.sleep(1)
-
     # 维护一个临时数组，用于存储温度值
     temp_array = arr.array("d")
 
@@ -71,7 +101,21 @@ def main():
 
     while True:
         bme = BME280(i2c=i2c)
-        current_time = time.time()
+
+        timestamp = utime.time()
+
+        # 将时间戳转换为本地时间的结构化对象
+
+        local_time = utime.localtime(timestamp)
+
+        # 从结构化对象中提取年、月、日、时、分、秒
+        year = str(local_time[0])
+        year = year.replace("20", "")
+        month = local_time[1]
+        day = local_time[2]
+        hour = local_time[3]
+        minute = local_time[4]
+        second = local_time[5]
 
         # 下方t是读取的温度值,测量值
         str_temp = bme.temperature  # 获取带有字符串C的字符串形式的温度
@@ -90,9 +134,15 @@ def main():
         pres = float(pres)
         pres_array.append(pres)
         # print("大气压的度数是: ", pres)
+
         # uncomment for temperature in Fahrenheit
         # temp = (bme.read_temperature()/100) * (9/5) + 32
         # temp = str(round(temp, 2)) + 'F'
+
+        temp = pop_element(dataset_temp)
+        humi = pop_element(dataset_hum)
+        pres = pop_element(dataset_pres)
+        show_time_msg(display, month, day, hour, minute, second, temp, humi, pres)
 
         if len(temp_array) == averageNum:
             T = Average(temp_array, averageNum)  # 当临时数组的元素的平均数
@@ -107,7 +157,7 @@ def main():
                 dataset_temp.append(T)
                 dataset_hum.append(H)
                 dataset_pres.append(P)
-                dataset_time.append(current_time)
+                dataset_time.append(timestamp)
             else:
                 length -= 1
                 pre_T = dataset_temp[length]
@@ -121,15 +171,15 @@ def main():
                 round_current_P = round(current_P, 1)
 
                 print("-----------------------------")
-                print("temprature after kalmanfilter is ", round_current_T)
-                print("humidity after kalmanfilter is ", round_current_H)
-                print("pressure after kalmanfilter is ", round_current_P)
+                # print("temprature after kalmanfilter is ", round_current_T)
+                # print("humidity after kalmanfilter is ", round_current_H)
+                # print("pressure after kalmanfilter is ", round_current_P)
 
                 dataset_temp.append(current_T)
                 dataset_hum.append(current_H)
                 dataset_pres.append(current_P)
-                dataset_time.append(current_time)
-                derta_time = current_time - dataset_time[length]
+                dataset_time.append(timestamp)
+                derta_time = timestamp - dataset_time[length]
                 str_msg = (
                     str(derta_time)
                     + ","
@@ -139,7 +189,7 @@ def main():
                     + ","
                     + str(round_current_P)
                 )
-
+                # 打印年月日时分秒
                 # msg = struct.pack("f", round_number)
                 msg = struct.pack("24s", str_msg.encode("utf-8"))
                 MQTT_CLIENT.publish(pub_topic, msg)
@@ -161,7 +211,7 @@ def main():
             hum_array = []
             pres_array = []
 
-        time.sleep(0.36)
+        utime.sleep(0.36)
 
 
 if __name__ == "__main__":
